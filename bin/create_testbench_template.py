@@ -6,7 +6,7 @@ from cocotb.handle import *
 import logging
 import pprint
 
-# FIXME: port stuff needs SINGLETON_HANDLES in lib/gpi/Makefile not set!
+# NOTE: port discovery needs SINGLETON_HANDLES in lib/gpi/Makefile not set!
 
 @cocotb.test()
 def create_testbench_template(dut):
