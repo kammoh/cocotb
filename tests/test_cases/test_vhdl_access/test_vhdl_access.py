@@ -101,12 +101,12 @@ def port_not_hierarchy(dut):
     tlog = logging.getLogger("cocotb.test")
     yield Timer(100)
     if not isinstance(dut.aclk, ModifiableObject):
-        tlog.error("dut.aclk should be ModifiableObject but got %s", dut.aclk.__class__.__name__)
+        tlog.error("dut.aclk should be ModifiableObject but got %s (1)", dut.aclk.__class__.__name__)
     else:
         tlog.info("dut.aclk is ModifiableObject")
     for _ in dut:
         pass
     if not isinstance(dut.aclk, ModifiableObject):
-        tlog.error("dut.aclk should be ModifiableObject but got %s", dut.aclk.__class__.__name__)
+        tlog.error("dut.aclk should be ModifiableObject but got %si (2)", dut.aclk.__class__.__name__)
     else:
         tlog.info("dut.aclk is ModifiableObject")

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Test to demonstrate functionality of the avalon basic streaming interface"""
 
 import logging

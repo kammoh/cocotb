@@ -59,11 +59,24 @@ from cocotb.utils import get_sim_time
 from cocotb.xunit_reporter import XUnitReporter
 
 
+import importlib.util
+import pathlib
+
 def _my_import(name):
-    mod = __import__(name)
-    components = name.split('.')
-    for comp in components[1:]:
-        mod = getattr(mod, comp)
+    try:
+        mod = __import__(name)
+        components = name.split('.')
+        for comp in components[1:]:
+            mod = getattr(mod, comp)
+        if mod:
+            return mod
+    except:
+        pass
+    name_splitted = name.split(".")
+    module_path = pathlib.Path.cwd().joinpath(*name_splitted).with_suffix(".py")
+    spec = importlib.util.spec_from_file_location(name_splitted[-1], module_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
     return mod
 
 

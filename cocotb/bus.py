@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright (c) 2013 Potential Ventures Ltd
 # Copyright (c) 2013 SolarFlare Communications Inc
@@ -30,7 +30,7 @@
 """Common bus related functionality.
 A bus is simply defined as a collection of signals.
 """
-from cocotb.handle import AssignmentResult
+from cocotb.handle import AssignmentResult, ModifiableObject
 
 def _build_sig_attr_dict(signals):
     if isinstance(signals, dict):
@@ -106,7 +106,20 @@ class Bus(object):
 
     def _add_signal(self, attr_name, signame):
         self._entity._log.debug("Signal name {}".format(signame))
-        setattr(self, attr_name, getattr(self._entity, signame))
+        signal = getattr(self._entity, signame, None)
+        if not signal:
+            self._entity._log.info("Signal name {} not found trying alternatives".format(signame))
+            for alt in [ 'i_' + signame, 'o_' + signame, signame + '_i', signame + '_o']:
+                self._entity._log.info("Trying {}..".format(alt))
+                try:
+                    signal = getattr(self._entity, alt)
+                    break
+                except AttributeError:
+                    pass
+        if not signal:
+            self._entity._log.error("no alternatives found for {}".format(signame))
+            raise AttributeError
+        setattr(self, attr_name, signal)
         self._signals[attr_name] = getattr(self, attr_name)
 
     def drive(self, obj, strict=False):

@@ -287,6 +287,7 @@ const char* VpiSignalObjHdl::get_signal_value_binstr(void)
     vpi_get_value(GpiObjHdl::get_handle<vpiHandle>(), &value_s);
     check_vpi_error();
 
+    FEXIT
     return value_s.value.str;
 }
 
