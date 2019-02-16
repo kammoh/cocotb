@@ -152,6 +152,8 @@ gpi_objtype_t to_gpi_objtype(int32_t vpitype)
     }
 }
 
+#include <cstdlib>
+
 GpiObjHdl* VpiImpl::create_gpi_obj_from_handle(vpiHandle new_hdl,
                                                std::string &name,
                                                std::string &fq_name)
@@ -162,6 +164,8 @@ GpiObjHdl* VpiImpl::create_gpi_obj_from_handle(vpiHandle new_hdl,
         LOG_DEBUG("vpiUnknown returned from vpi_get(vpiType, ...)")
         return NULL;
     }
+
+    printf(">>>   name=%s fq_name=%s type=%d\n", name.c_str(), fq_name.c_str(), type); 
 
     /* What sort of instance is this ?*/
     switch (type) {
