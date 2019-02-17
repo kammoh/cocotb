@@ -51,7 +51,7 @@ class GpiCbHdl;
 template<class To>
 inline To sim_to_hdl(gpi_sim_hdl input)
 {
-    To result = static_cast<To>(input);
+    To result = reinterpret_cast<To>(input);
     if (!result) {
         LOG_CRITICAL("GPI: Handle passed down is not valid gpi_sim_hdl");
     }
@@ -134,6 +134,7 @@ public:
     bool get_is_port(void) { return m_is_port; };
     virtual const char* get_port_direction_str(void);
     gpi_port_direction_t get_port_direction(void) { return m_port_direction; };
+    
     int get_num_elems(void) {
         LOG_DEBUG("%s has %d elements", m_name.c_str(), m_num_elems);
         return m_num_elems;
@@ -181,7 +182,10 @@ public:
                                                          m_length(0) { }
     virtual ~GpiSignalObjHdl() { }
     // Provide public access to the implementation (composition vs inheritance)
-    virtual const char* get_signal_value_binstr(void) = 0;
+    virtual const char* get_signal_value_binstr(void){
+      fprintf(stderr, "base GpiSignalObjHdl::get_signal_value_str(): SHOULD NOT BEEN CALLED!\n");
+      return NULL;
+    };
     virtual const char* get_signal_value_str(void) = 0;
     virtual double get_signal_value_real(void) = 0;
     virtual long get_signal_value_long(void) = 0;

@@ -496,7 +496,7 @@ static PyObject *register_value_change_callback(PyObject *self, PyObject *args) 
 }
 
 
-static PyObject *iterate(PyObject *self, PyObject *args)
+PyObject *iterate(PyObject *self, PyObject *args)
 {
     gpi_sim_hdl hdl;
     int type;
@@ -515,14 +515,15 @@ static PyObject *iterate(PyObject *self, PyObject *args)
 }
 
 
-static PyObject *next(PyObject *self, PyObject *args)
+PyObject *next(PyObject *self, PyObject *args)
 {
     gpi_iterator_hdl hdl;
     gpi_sim_hdl result;
     PyObject *res;
 
     if (!PyArg_ParseTuple(args, "O&", gpi_iterator_hdl_converter, &hdl)) {
-        return NULL;
+      PyErr_SetNone(PyExc_StopIteration);
+      return NULL;
     }
 
     // It's valid for iterate to return a NULL handle, to make the Python
@@ -532,16 +533,20 @@ static PyObject *next(PyObject *self, PyObject *args)
         return NULL;
     }
 
+    LOG_DEBUG("before gpi_next");
     result = gpi_next(hdl);
+    LOG_DEBUG("after gpi_next");
 
     // Raise StopIteration when we're done
     if (!result) {
-        PyErr_SetNone(PyExc_StopIteration);
-        return NULL;
+      LOG_DEBUG("result==NULL");
+      PyErr_SetNone(PyExc_StopIteration);
+      return NULL;
     }
 
+    LOG_DEBUG("before PyLong_FromVoidPtr");
     res = PyLong_FromVoidPtr(result);
-
+    LOG_DEBUG("after PyLong_FromVoidPtr");
     return res;
 }
 

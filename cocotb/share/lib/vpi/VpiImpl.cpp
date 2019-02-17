@@ -99,6 +99,7 @@ gpi_objtype_t to_gpi_objtype(int32_t vpitype)
         case vpiReg:
         case vpiRegBit:
         case vpiMemoryWord:
+        case vpiPort:
             return GPI_REGISTER;
 
         case vpiRealVar:
@@ -134,7 +135,6 @@ gpi_objtype_t to_gpi_objtype(int32_t vpitype)
         case vpiInterface:
         case vpiModule:
         case vpiRefObj:
-        case vpiPort:
         case vpiAlways:
         case vpiFunction:
         case vpiInitial:
@@ -154,6 +154,7 @@ gpi_objtype_t to_gpi_objtype(int32_t vpitype)
 
 #include <cstdlib>
 
+char VPI_TEMP_STR[1024];
 GpiObjHdl* VpiImpl::create_gpi_obj_from_handle(vpiHandle new_hdl,
                                                std::string &name,
                                                std::string &fq_name)
@@ -165,11 +166,10 @@ GpiObjHdl* VpiImpl::create_gpi_obj_from_handle(vpiHandle new_hdl,
         return NULL;
     }
 
-    printf(">>>   name=%s fq_name=%s type=%d\n", name.c_str(), fq_name.c_str(), type); 
-
     /* What sort of instance is this ?*/
     switch (type) {
         case vpiNet:
+        case vpiPort:
         case vpiNetBit:
         case vpiReg:
         case vpiRegBit:
@@ -201,7 +201,6 @@ GpiObjHdl* VpiImpl::create_gpi_obj_from_handle(vpiHandle new_hdl,
         case vpiInterface:
         case vpiModport:
         case vpiRefObj:
-        case vpiPort:
         case vpiAlways:
         case vpiFunction:
         case vpiInitial:
@@ -234,17 +233,28 @@ GpiObjHdl* VpiImpl::create_gpi_obj_from_handle(vpiHandle new_hdl,
             return NULL;
     }
 
-    if (vpi_get(vpiType, new_hdl) == vpiPort) {
+    if (type == vpiPort) {
         int dir_raw = vpi_get(vpiDirection, new_hdl);
         gpi_port_direction_t dir = to_gpi_port_direction(dir_raw);
         LOG_DEBUG("new_obj->initialise: is_port, port_direction=%d", dir);
         new_obj->initialise(name, fq_name, true, dir);
-    } else {
-        new_obj->initialise(name, fq_name);
     }
+    
+    new_obj->initialise(name, fq_name);
+    
 
-    LOG_DEBUG("VPI: Created object '%s' with type %s(%d)",
-              vpi_get_str(vpiName, new_hdl), vpi_get_str(vpiType, new_hdl), type);
+
+    int chars_written = 0;
+
+    chars_written +=
+        snprintf(VPI_TEMP_STR + chars_written, sizeof(VPI_TEMP_STR),
+                 "VPI: Created object '%s' ", vpi_get_str(vpiName, new_hdl));
+    chars_written += snprintf(VPI_TEMP_STR + chars_written, sizeof(VPI_TEMP_STR) - chars_written, "with type %s(%d)", vpi_get_str(vpiType, new_hdl), type);
+    chars_written += snprintf(
+        VPI_TEMP_STR + chars_written, sizeof(VPI_TEMP_STR) - chars_written,
+        " created object name: %s type: %s (%d) ", new_obj->get_name().c_str(),
+        new_obj->get_type_str(), new_obj->get_type());
+    LOG_DEBUG(VPI_TEMP_STR);
 
     return new_obj;
 }
@@ -675,7 +685,9 @@ static int system_function_overload(char *userdata)
         argval.format = vpiStringVal;
         vpi_get_value(argh, &argval);
         vpi_free_object(args_iter);
-        msg = argval.value.str;
+        if (argval.value.str){
+            msg = argval.value.str;
+        }
     }
 
     gpi_log("simulator", *userdata, vpi_get_str(vpiFile, systfref), "", (long)vpi_get(vpiLineNo, systfref), "%s", msg );

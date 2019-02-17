@@ -651,23 +651,26 @@ int VhpiSignalObjHdl::set_signal_value(std::string &value)
 
 const char* VhpiSignalObjHdl::get_signal_value_binstr(void)
 {
-    switch (m_value.format) {
-        case vhpiRealVal:
-            LOG_INFO("get_signal_value_binstr not supported for %s",
-                      ((VhpiImpl*)GpiObjHdl::m_impl)->format_to_string(m_value.format));
-            return "";
-        default: {
-            /* Some simulators do not support BinaryValues so we fake up here for them */
-            int ret = vhpi_get_value(GpiObjHdl::get_handle<vhpiHandleT>(), &m_binvalue);
-            if (ret) {
-                check_vhpi_error();
-                LOG_ERROR("Size of m_binvalue.value.str was not large enough req=%d have=%d for type %s",
-                          ret,
-                          m_binvalue.bufSize,
-                          ((VhpiImpl*)GpiObjHdl::m_impl)->format_to_string(m_value.format));
-            }
+  fprintf(stderr, "in VhpiSignalObjHdl::get_signal_value_binstr\n");
+  switch (m_value.format) {
+  case vhpiRealVal:
+    LOG_INFO("get_signal_value_binstr not supported for %s",
+             ((VhpiImpl *)GpiObjHdl::m_impl)->format_to_string(m_value.format));
+    return "";
+  default: {
+    /* Some simulators do not support BinaryValues so we fake up here for them
+     */
+    int ret = vhpi_get_value(GpiObjHdl::get_handle<vhpiHandleT>(), &m_binvalue);
+    if (ret) {
+      check_vhpi_error();
+      LOG_ERROR(
+          "Size of m_binvalue.value.str was not large enough req=%d have=%d "
+          "for type %s",
+          ret, m_binvalue.bufSize,
+          ((VhpiImpl *)GpiObjHdl::m_impl)->format_to_string(m_value.format));
+    }
 
-            return m_binvalue.value.str;
+    return m_binvalue.value.str;
         }
     }
 }

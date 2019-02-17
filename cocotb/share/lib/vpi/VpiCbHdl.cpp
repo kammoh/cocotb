@@ -665,10 +665,9 @@ VpiIterator::VpiIterator(GpiImplInterface *impl, GpiObjHdl *hdl) : GpiIterator(i
     }
 
     if (NULL == iterator) {
-        LOG_DEBUG("vpi_iterate return NULL for all relationships on %s (%d) type:%s",
-                  vpi_get_str(vpiName, vpi_hdl),
-                  type,
-                  vpi_get_str(vpiType, vpi_hdl));
+        LOG_DEBUG("vpi_iterate return NULL for all relationships on %s",
+                  vpi_get_str(vpiName, vpi_hdl));
+        LOG_DEBUG("type:%s (%d)", vpi_get_str(vpiType, vpi_hdl), type);
         selected = NULL;
         return;
     }

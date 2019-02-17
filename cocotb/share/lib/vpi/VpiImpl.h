@@ -37,7 +37,7 @@
 static inline int __check_vpi_error(const char *file, const char *func, long line)
 {
     int level=0;
-#if VPI_CHECKING
+#ifdef VPI_CHECKING
     s_vpi_error_info info;
     int loglevel;
 
