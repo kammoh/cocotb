@@ -54,11 +54,15 @@ _FUNCNAME_CHARS = 31  # noqa
 class SimBaseLog(logging.getLoggerClass()):
     def __init__(self, name):
         hdlr = logging.StreamHandler(sys.stdout)
-        want_ansi = os.getenv("COCOTB_ANSI_OUTPUT") and not os.getenv("GUI")
+        want_ansi = os.getenv("COCOTB_ANSI_OUTPUT")
         if want_ansi is None:
             want_ansi = sys.stdout.isatty()  # default to ANSI for TTYs
         else:
             want_ansi = want_ansi == '1'
+
+        if os.getenv("GUI"):
+            want_ansi = False
+            
         if want_ansi:
             hdlr.setFormatter(SimColourLogFormatter())
             self.colour = True
