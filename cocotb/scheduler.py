@@ -228,8 +228,8 @@ class Scheduler(object):
         # indexed by trigger
         self._trigger2coros = collections.defaultdict(list)
 
-        # A dictionary of pending triggers for each coroutine, indexed by coro
-        self._coro2triggers = collections.defaultdict(list)
+        # A dictionary mapping coroutines to the trigger they are waiting for
+        self._coro2trigger = {}
 
         # Our main state
         self._mode = Scheduler._MODE_NORMAL
@@ -250,6 +250,7 @@ class Scheduler(object):
 
         # Select the appropriate scheduling algorithm for this simulator
         self.advance = self.default_scheduling_algorithm
+        self._is_reacting = False
 
     def default_scheduling_algorithm(self):
         """
@@ -281,7 +282,7 @@ class Scheduler(object):
 
             self._timer1.prime(self.begin_test)
             self._trigger2coros = collections.defaultdict(list)
-            self._coro2triggers = collections.defaultdict(list)
+            self._coro2trigger = {}
             self._terminate = False
             self._mode = Scheduler._MODE_TERM
 
@@ -309,7 +310,7 @@ class Scheduler(object):
             if self._test_result is not None:
                 if _debug:
                     self.log.debug("Issue test result to regression object")
-                cocotb.regression.handle_result(self._test_result)
+                cocotb.regression_manager.handle_result(self._test_result)
                 self._test_result = None
             if self._entrypoint is not None:
                 test = self._entrypoint
@@ -317,13 +318,37 @@ class Scheduler(object):
                 self.schedule(test)
                 self.advance()
 
-    def react(self, trigger, depth=0):
-        """React called when a trigger fires.
-
-        We find any coroutines that are waiting on the particular trigger and
-        schedule them.
+    def react(self, trigger):
         """
-        if _profiling and not depth:
+        Called when a trigger fires.
+
+        We ensure that we only start the event loop once, rather than
+        letting it recurse.
+        """
+        if self._is_reacting:
+            # queue up the trigger, the event loop will get to it
+            self._pending_triggers.append(trigger)
+            return
+
+        # start the event loop
+        self._is_reacting = True
+        try:
+            self._event_loop(trigger)
+        finally:
+            self._is_reacting = False
+
+
+    def _event_loop(self, trigger):
+        """
+        Run an event loop triggered by the given trigger.
+
+        The loop will keep running until no further triggers fire.
+
+        This should be triggered by only:
+        * The beginning of a test, when there is no trigger to react to
+        * A GPI trigger
+        """
+        if _profiling:
             ctx = profiling_context()
         else:
             ctx = nullcontext()
@@ -374,65 +399,64 @@ class Scheduler(object):
 
                 return
 
-            if trigger not in self._trigger2coros:
+            # work through triggers one by one
+            is_first = True
+            self._pending_triggers.append(trigger)
+            while self._pending_triggers:
+                trigger = self._pending_triggers.pop(0)
 
-                # GPI triggers should only be ever pending if there is an
-                # associated coroutine waiting on that trigger, otherwise it would
-                # have been unprimed already
-                if isinstance(trigger, GPITrigger):
-                    self.log.critical(
-                        "No coroutines waiting on trigger that fired: %s" %
-                        str(trigger))
+                if not is_first and isinstance(trigger, GPITrigger):
+                    self.log.warning(
+                        "A GPI trigger occurred after entering react - this "
+                        "should not happen."
+                    )
+                    assert False
 
-                    trigger.log.info("I'm the culprit")
-                # For Python triggers this isn't actually an error - we might do
-                # event.set() without knowing whether any coroutines are actually
-                # waiting on this event, for example
-                elif _debug:
-                    self.log.debug(
-                        "No coroutines waiting on trigger that fired: %s" %
-                        str(trigger))
+                # this only exists to enable the warning above
+                is_first = False
 
-                return
+                if trigger not in self._trigger2coros:
 
-            # Scheduled coroutines may append to our waiting list so the first
-            # thing to do is pop all entries waiting on this trigger.
-            scheduling = self._trigger2coros.pop(trigger)
+                    # GPI triggers should only be ever pending if there is an
+                    # associated coroutine waiting on that trigger, otherwise it would
+                    # have been unprimed already
+                    if isinstance(trigger, GPITrigger):
+                        self.log.critical(
+                            "No coroutines waiting on trigger that fired: %s" %
+                            str(trigger))
 
-            if _debug:
-                debugstr = "\n\t".join([coro.__name__ for coro in scheduling])
-                if len(scheduling):
-                    debugstr = "\n\t" + debugstr
-                self.log.debug("%d pending coroutines for event %s%s" %
-                               (len(scheduling), str(trigger), debugstr))
+                        trigger.log.info("I'm the culprit")
+                    # For Python triggers this isn't actually an error - we might do
+                    # event.set() without knowing whether any coroutines are actually
+                    # waiting on this event, for example
+                    elif _debug:
+                        self.log.debug(
+                            "No coroutines waiting on trigger that fired: %s" %
+                            str(trigger))
 
-            # This trigger isn't needed any more
-            trigger.unprime()
+                    continue
 
-            # If the coroutine was waiting on multiple triggers we may be able
-            # to unprime the other triggers that didn't fire
-            scheduling_set = set(scheduling)
-            other_triggers = {
-                t
-                for coro in scheduling
-                for t in self._coro2triggers[coro]
-            } - {trigger}
+                # Scheduled coroutines may append to our waiting list so the first
+                # thing to do is pop all entries waiting on this trigger.
+                scheduling = self._trigger2coros.pop(trigger)
 
-            for pending in other_triggers:
-                # every coroutine waiting on this trigger is already being woken
-                if scheduling_set.issuperset(self._trigger2coros[pending]):
-                    if pending.primed:
-                        pending.unprime()
-                    del self._trigger2coros[pending]
-
-            for coro in scheduling:
                 if _debug:
-                    self.log.debug("Scheduling coroutine %s" % (coro.__name__))
-                self.schedule(coro, trigger=trigger)
-                if _debug:
-                    self.log.debug("Scheduled coroutine %s" % (coro.__name__))
+                    debugstr = "\n\t".join([coro.__name__ for coro in scheduling])
+                    if len(scheduling):
+                        debugstr = "\n\t" + debugstr
+                    self.log.debug("%d pending coroutines for event %s%s" %
+                                   (len(scheduling), str(trigger), debugstr))
 
-            if not depth:
+                # This trigger isn't needed any more
+                trigger.unprime()
+
+                for coro in scheduling:
+                    if _debug:
+                        self.log.debug("Scheduling coroutine %s" % (coro.__name__))
+                    self.schedule(coro, trigger=trigger)
+                    if _debug:
+                        self.log.debug("Scheduled coroutine %s" % (coro.__name__))
+
                 # Schedule may have queued up some events so we'll burn through those
                 while self._pending_events:
                     if _debug:
@@ -440,31 +464,28 @@ class Scheduler(object):
                                        (str(self._pending_events[0])))
                     self._pending_events.pop(0).set()
 
-            while self._pending_triggers:
-                if _debug:
-                    self.log.debug("Scheduling pending trigger %s" %
-                                   (str(self._pending_triggers[0])))
-                self.react(self._pending_triggers.pop(0), depth=depth + 1)
-
-            # We only advance for GPI triggers
-            if not depth and isinstance(trigger, GPITrigger):
-                self.advance()
-
-                if _debug:
-                    self.log.debug("All coroutines scheduled, handing control back"
-                                   " to simulator")
+            # no more pending triggers
+            self.advance()
+            if _debug:
+                self.log.debug("All coroutines scheduled, handing control back"
+                               " to simulator")
 
 
     def unschedule(self, coro):
         """Unschedule a coroutine.  Unprime any pending triggers"""
 
-        for trigger in self._coro2triggers[coro]:
+        # Unprime the trigger this coroutine is waiting on
+        try:
+            trigger = self._coro2trigger.pop(coro)
+        except KeyError:
+            # coroutine probably finished
+            pass
+        else:
             if coro in self._trigger2coros[trigger]:
                 self._trigger2coros[trigger].remove(coro)
             if not self._trigger2coros[trigger]:
                 trigger.unprime()
                 del self._trigger2coros[trigger]
-        del self._coro2triggers[coro]
 
         if Join(coro) in self._trigger2coros:
             self._pending_triggers.append(Join(coro))
@@ -485,21 +506,19 @@ class Scheduler(object):
             raise Exception("Write to object {0} was scheduled during a read-only sync phase.".format(handle._name))
         self._writes[handle] = value
 
-    def _coroutine_yielded(self, coro, triggers):
-        """Prime the triggers and update our internal mappings."""
-        self._coro2triggers[coro] = triggers
+    def _coroutine_yielded(self, coro, trigger):
+        """Prime the trigger and update our internal mappings."""
+        self._coro2trigger[coro] = trigger
 
-        for trigger in triggers:
-
-            self._trigger2coros[trigger].append(coro)
-            if not trigger.primed:
-                try:
-                    trigger.prime(self.react)
-                except Exception as e:
-                    # Convert any exceptions into a test result
-                    self.finish_test(
-                        create_error(self, "Unable to prime trigger %s: %s" %
-                                     (str(trigger), str(e))))
+        self._trigger2coros[trigger].append(coro)
+        if not trigger.primed:
+            try:
+                trigger.prime(self.react)
+            except Exception as e:
+                # Convert any exceptions into a test result
+                self.finish_test(
+                    create_error(self, "Unable to prime trigger %s: %s" %
+                                 (str(trigger), str(e))))
 
     def queue(self, coroutine):
         """Queue a coroutine for execution"""
@@ -624,10 +643,16 @@ class Scheduler(object):
         if self._terminate:
             return
 
-        # Queue current routine to schedule when the nested routine exits
-        yield_successful = False
-        if isinstance(result, cocotb.decorators.RunningCoroutine):
+        # convert lists into `First` Waitables.
+        if isinstance(result, list):
+            result = cocotb.triggers.First(*result)
 
+        # convert waitables into coroutines
+        if isinstance(result, cocotb.triggers.Waitable):
+            result = result._wait()
+
+        # convert coroutinues into triggers
+        if isinstance(result, cocotb.decorators.RunningCoroutine):
             if not result.has_started():
                 self.queue(result)
                 if _debug:
@@ -638,47 +663,14 @@ class Scheduler(object):
                     self.log.debug("Joining to already running coroutine: %s" %
                                    result.__name__)
 
-            new_trigger = result.join()
-            self._coroutine_yielded(coroutine, [new_trigger])
-            yield_successful = True
+            result = result.join()
 
-        elif isinstance(result, Trigger):
+        if isinstance(result, Trigger):
             if _debug:
                 self.log.debug("%s: is instance of Trigger" % result)
-            self._coroutine_yielded(coroutine, [result])
-            yield_successful = True
+            self._coroutine_yielded(coroutine, result)
 
-        # If we get a list, make sure it's a list of triggers or coroutines.
-        # For every coroutine, replace it with coroutine.join().
-        # This could probably be done more elegantly via list comprehension.
-        elif isinstance(result, list):
-            new_triggers = []
-            for listobj in result:
-                if isinstance(listobj, Trigger):
-                    new_triggers.append(listobj)
-                elif isinstance(listobj, cocotb.decorators.RunningCoroutine):
-                    if _debug:
-                        self.log.debug("Scheduling coroutine in list: %s" %
-                                       listobj.__name__)
-                    if not listobj.has_started():
-                        self.queue(listobj)
-                    new_trigger = listobj.join()
-                    new_triggers.append(new_trigger)
-                else:
-                    # If we encounter something not a coroutine or trigger,
-                    # set the success flag to False and break out of the loop.
-                    yield_successful = False
-                    break
-
-            # Make sure the lists are the same size. If they are not, it means
-            # it contained something not a trigger/coroutine, so do nothing.
-            if len(new_triggers) == len(result):
-                self._coroutine_yielded(coroutine, new_triggers)
-                yield_successful = True
-
-        # If we didn't successfully yield anything, thrown an error.
-        # Do it this way to make the logic in the list case simpler.
-        if not yield_successful:
+        else:
             msg = ("Coroutine %s yielded something the scheduler can't handle"
                    % str(coroutine))
             msg += ("\nGot type: %s repr: %s str: %s" %
@@ -732,7 +724,7 @@ class Scheduler(object):
            once we return the sim will close us so no cleanup is needed.
         """
         self.log.debug("Issue sim closedown result to regression object")
-        cocotb.regression.handle_result(test_result)
+        cocotb.regression_manager.handle_result(test_result)
 
     def cleanup(self):
         """Clear up all our state.

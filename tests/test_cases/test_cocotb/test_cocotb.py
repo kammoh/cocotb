@@ -39,7 +39,8 @@ Also used as regression test of cocotb capabilities
 
 import cocotb
 from cocotb.triggers import (Timer, Join, RisingEdge, FallingEdge, Edge,
-                             ReadOnly, ReadWrite, ClockCycles, NextTimeStep)
+                             ReadOnly, ReadWrite, ClockCycles, NextTimeStep,
+                             NullTrigger, Combine, Event, First)
 from cocotb.clock import Clock
 from cocotb.result import ReturnValue, TestFailure, TestError, TestSuccess
 from cocotb.utils import get_sim_time
@@ -839,6 +840,16 @@ def test_lessthan_raises_error(dut):
     if False: yield
 
 
+@cocotb.test()
+def test_tests_are_tests(dut):
+    """
+    Test that things annotated with cocotb.test are tests
+    """
+    yield Timer(1)
+
+    assert isinstance(test_tests_are_tests, cocotb.test)
+
+
 if sys.version_info[:2] >= (3, 3):
     # this would be a syntax error in older python, so we do the whole
     # thing inside exec
@@ -864,15 +875,160 @@ if sys.version_info[:2] >= (3, 3):
 
 
 @cocotb.test()
-def test_exceptions():
+def test_exceptions(dut):
     @cocotb.coroutine
     def raise_soon():
         yield Timer(10)
         raise ValueError('It is soon now')
-    
+
     try:
         yield raise_soon()
     except ValueError:
         pass
     else:
         raise TestFailure("Exception was not raised")
+
+@cocotb.test()
+def test_stack_overflow(dut):
+    """
+    Test against stack overflows when starting many coroutines that terminate
+    before passing control to the simulator.
+    """
+    @cocotb.coroutine
+    def null_coroutine():
+        yield NullTrigger()
+
+    for _ in range(10000):
+        yield null_coroutine()
+
+    yield Timer(100)
+
+
+@cocotb.test()
+def test_immediate_coro(dut):
+    """
+    Test that coroutines can return immediately
+    """
+    # note: it seems that the test still has to yield at least once, even
+    # if the subroutines do not
+    yield Timer(1)
+
+    @cocotb.coroutine
+    def immediate_value():
+        raise ReturnValue(42)
+        yield
+
+    @cocotb.coroutine
+    def immediate_exception():
+        raise ValueError
+        yield
+
+    assert (yield immediate_value()) == 42
+
+    try:
+        yield immediate_exception()
+    except ValueError:
+        pass
+    else:
+        raise TestFailure("Exception was not raised")
+
+
+@cocotb.test()
+def test_combine(dut):
+    """ Test the Combine trigger. """
+    # gh-852
+
+    @cocotb.coroutine
+    def do_something(delay):
+        yield Timer(delay)
+
+    crs = [cocotb.fork(do_something(dly)) for dly in [10, 30, 20]]
+
+    yield Combine(*(cr.join() for cr in crs))
+
+
+@cocotb.test()
+def test_clock_cycles_forked(dut):
+    """ Test that ClockCycles can be used in forked coroutines """
+    # gh-520
+
+    clk_gen = cocotb.fork(Clock(dut.clk, 100).start())
+
+    @cocotb.coroutine
+    def wait_ten():
+        yield ClockCycles(dut.clk, 10)
+
+    a = cocotb.fork(wait_ten())
+    b = cocotb.fork(wait_ten())
+    yield a.join()
+    yield b.join()
+
+
+@cocotb.test()
+def test_yield_list_stale(dut):
+    """ Test that a trigger yielded as part of a list can't cause a spurious wakeup """
+    # gh-843
+    events = [Event() for i in range(3)]
+
+    waiters = [e.wait() for e in events]
+
+    @cocotb.coroutine
+    def wait_for_lists():
+        ret_i = waiters.index((yield [waiters[0], waiters[1]]))
+        assert ret_i == 0, "Expected event 0 to fire, not {}".format(ret_i)
+
+        ret_i = waiters.index((yield [waiters[2]]))
+        assert ret_i == 2, "Expected event 2 to fire, not {}".format(ret_i)
+
+    @cocotb.coroutine
+    def wait_for_e1():
+        """ wait on the event that didn't wake `wait_for_lists` """
+        ret_i = waiters.index((yield waiters[1]))
+        assert ret_i == 1, "Expected event 1 to fire, not {}".format(ret_i)
+
+    @cocotb.coroutine
+    def fire_events():
+        """ fire the events in order """
+        for e in events:
+            yield Timer(1)
+            e.set()
+
+    fire_task = cocotb.fork(fire_events())
+    e1_task = cocotb.fork(wait_for_e1())
+    yield wait_for_lists()
+
+    # make sure the other tasks finish
+    yield fire_task.join()
+    yield e1_task.join()
+
+
+@cocotb.test()
+def test_nested_first(dut):
+    """ Test that nested First triggers behave as expected """
+    events = [Event() for i in range(3)]
+    waiters = [e.wait() for e in events]
+
+    @cocotb.coroutine
+    def fire_events():
+        """ fire the events in order """
+        for e in events:
+            yield Timer(1)
+            e.set()
+
+
+    @cocotb.coroutine
+    def wait_for_nested_first():
+        inner_first = First(waiters[0], waiters[1])
+        ret = yield First(inner_first, waiters[2])
+
+        # should unpack completely, rather than just by one level
+        assert ret is not inner_first
+        assert ret is waiters[0]
+
+    fire_task = cocotb.fork(fire_events())
+    yield wait_for_nested_first()
+    yield fire_task.join()
+
+
+if sys.version_info[:2] >= (3, 5):
+    from test_cocotb_35 import *

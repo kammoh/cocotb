@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 ###############################################################################
 # Copyright (c) 2013 Potential Ventures Ltd
 # Copyright (c) 2013 SolarFlare Communications Inc
@@ -25,12 +26,49 @@
 # ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-##############################################################################
+###############################################################################
 
-# Backwards-compatibility wrapper for people using
-# "include $COCOTB/makefiles/Makefile.inc" in their Makefile.
-COCOTB_INSTALL_METHOD = srctree
-export COCOTB_INSTALL_METHOD
+from setuptools import setup
+from setuptools import find_packages
+from os import path, walk
 
-_NEW_SHARE_DIR := $(realpath $(dir $(lastword $(MAKEFILE_LIST))))/../cocotb/share
-include $(_NEW_SHARE_DIR)/makefiles/Makefile.inc
+def read_file(fname):
+    return open(path.join(path.dirname(__file__), fname)).read()
+
+def package_files(directory):
+    paths = []
+    for (fpath, directories, filenames) in walk(directory):
+        for filename in filenames:
+            paths.append(path.join('..', fpath, filename))
+    return paths
+
+version = read_file('version')[8:].strip()
+
+setup(
+    name='cocotb',
+    version=version,
+    description='cocotb is a coroutine based cosimulation library for writing VHDL and Verilog testbenches in Python.',
+    url='https://github.com/potentialventures/cocotb',
+    license='BSD',
+    long_description=read_file('README.md'),
+    long_description_content_type='text/markdown',
+    author='Chris Higgs, Stuart Hodgson',
+    author_email='cocotb@potentialventures.com',
+    install_requires=[],
+    packages=find_packages(),
+    include_package_data=True,
+    package_data={'cocotb': package_files('cocotb/share')},
+    entry_points={
+        'console_scripts': [
+            'cocotb-config=cocotb.config:main',
+        ]
+    },
+    platforms='any',
+    classifiers=[
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: BSD License",
+        "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    ],
+)
+

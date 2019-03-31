@@ -218,10 +218,10 @@ class RegionObject(SimHandleBase):
         """Translates the handle name to a key to use in ``_sub_handles`` dictionary."""
         return name.split(".")[-1]
 
-    def _getAttributeNames(self):
+    def __dir__(self):
         """Permits IPython tab completion to work."""
         self._discover_all()
-        return dir(self)
+        return super(RegionObject, self).__dir__() + [str(k) for k in self._sub_handles]
 
 
 class HierarchyObject(RegionObject):
@@ -509,7 +509,7 @@ class NonHierarchyIndexableObject(NonHierarchyObject):
     def __iter__(self):
         try:
             if self._range is None:
-                raise StopIteration
+                return
 
             self._log.debug("Iterating with range [%d:%d]" % (self._range[0], self._range[1]))
             for i in self._range_iter(self._range[0], self._range[1]):
