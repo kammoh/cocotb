@@ -104,20 +104,24 @@ class Bus(object):
                 self._entity._log.debug("Ignoring optional missing signal "
                                         "%s on bus %s" % (sig_name, name))
 
-    def _add_signal(self, attr_name, signame):
+    def _add_signal(self, attr_name, signame, dir=None, bs='_'):
         self._entity._log.debug("Signal name {}".format(signame))
         signal = getattr(self._entity, signame, None)
         if not signal:
-            self._entity._log.info("Signal name {} not found trying alternatives".format(signame))
-            for alt in [ 'i_' + signame, 'o_' + signame, signame + '_i', signame + '_o']:
-                self._entity._log.info("Trying {}..".format(alt))
+            self._entity._log.debug("Signal name {} not found trying alternatives".format(signame))
+            for alt in ['i' + bs + signame, 'o' + bs + signame, signame + bs + 'i', signame + bs + '_o']:
+                self._entity._log.debug("Trying {}..".format(alt))
                 try:
-                    signal = getattr(self._entity, alt)
-                    break
+                    s = getattr(self._entity, alt)
+                    if s._is_port:
+                        signal = s
+                        self._entity._log.info(
+                            "Selecting port {} ({}) for {}".format(alt, s._port_direction_string, signame))
+                        break
                 except AttributeError:
                     pass
         if not signal:
-            self._entity._log.error("no alternatives found for {}".format(signame))
+            self._entity._log.error("no alternatives ports found for {}".format(signame))
             raise AttributeError
         setattr(self, attr_name, signal)
         self._signals[attr_name] = getattr(self, attr_name)

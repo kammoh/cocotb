@@ -122,8 +122,11 @@ def _initialise_testbench(root_name):
     exec_path = os.getenv('COCOTB_PY_DIR')
     if exec_path is None:
         exec_path = 'Unknown'
+    
+    version_file = os.path.join(os.path.dirname(__file__), '..', 'version')
+    version = open(version_file).read()[8:].strip()
 
-    version = os.getenv('VERSION')
+    #version = os.getenv('VERSION')
     if version is None:
         log.info("Unable to determine Cocotb version from %s" % exec_path)
     else:

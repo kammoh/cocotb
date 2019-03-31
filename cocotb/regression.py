@@ -71,13 +71,17 @@ def _my_import(name):
         if mod:
             return mod
     except:
-        pass
-    name_splitted = name.split(".")
-    module_path = pathlib.Path.cwd().joinpath(*name_splitted).with_suffix(".py")
-    spec = importlib.util.spec_from_file_location(name_splitted[-1], module_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+        print(f"_my_import: Original import of {name} failed. Trying alternative method.")
+    try:
+        name_splitted = name.split(".")
+        module_path = pathlib.Path.cwd().joinpath(*name_splitted).with_suffix(".py")
+        spec = importlib.util.spec_from_file_location(name_splitted[-1], module_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except:
+        print("_my_import: alternative method also failed")
+        raise ImportError
 
 
 class RegressionManager(object):
